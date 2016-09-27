@@ -5,23 +5,8 @@ namespace Banago\PHPloy;
 /**
  * Class Git.
  */
-class Git
+class Git extends Vsc
 {
-    /**
-     * @var string Git branch
-     */
-    public $branch;
-
-    /**
-     * @var string Git revision
-     */
-    public $revision;
-
-    /**
-     * @var string Git repository
-     */
-    protected $repo;
-
     /**
      * Git constructor.
      *
@@ -34,30 +19,7 @@ class Git
         $this->revision = $this->command('rev-parse HEAD')[0];
     }
 
-    /**
-     * Executes a console command and returns the output (as an array).
-     *
-     * @param string $command Command to execute
-     *
-     * @return array of all lines that were output to the console during the command (STDOUT)
-     */
-    public function exec($command)
-    {
-        $output = null;
 
-        exec('('.escapeshellcmd($command).') 2>&1', $output);
-
-        return $output;
-    }
-
-    /**
-     * Runs a git command and returns the output (as an array).
-     *
-     * @param string $command  "git [your-command-here]"
-     * @param string $repoPath Defaults to $this->repo
-     *
-     * @return array Lines of the output
-     */
     public function command($command, $repoPath = null)
     {
         if (!$repoPath) {
@@ -67,18 +29,9 @@ class Git
         // "-c core.quotepath=false" in fixes special characters issue like ë, ä, ü etc., in file names
         $command = 'git -c core.quotepath=false --git-dir="'.$repoPath.'/.git" --work-tree="'.$repoPath.'" '.$command;
 
-        return $this->exec($command);
+        return PHPloy::exec($command);
     }
 
-    /**
-     * Diff versions.
-     *
-     * @param string $remoteRevision
-     * @param string $localRevision
-     * @param string $repoPath
-     *
-     * @return array
-     */
     public function diff($remoteRevision, $localRevision, $repoPath = null)
     {
         if (empty($remoteRevision)) {
@@ -93,18 +46,47 @@ class Git
         return $this->command($command, $repoPath);
     }
 
-    /**
-     * Checkout given $branch.
-     *
-     * @param string $branch
-     * @param string $repoPath
-     *
-     * @return array
-     */
+
     public function checkout($branch, $repoPath = null)
     {
         $command = 'checkout '.$branch;
 
         return $this->command($command, $repoPath);
     }
+
+    public function determineStatus($line)
+    {
+        if (
+            strpos($line, 'warning: CRLF will be replaced by LF in') !== false ||
+            strpos($line, 'The file will have its original line endings in your working directory.') !== false
+        )
+            return ['---', 'Ignored'];
+
+        /*
+         * Git Status Codes
+         *
+         * U: file is unmerged (you must complete the merge before it can be committed)
+         * X: "unknown" change type (most probably a bug, please report it)
+         */
+        $mstatus = [
+                'A' => 'ADD',   // added
+                'M' => 'MOD',   // modified
+                'C' => 'CPY',   // copied
+                'T' => 'TYP',   // type change
+                'D' => 'DEL',   // removed
+                'R' => 'MOV',   // renamed
+            ];
+
+        $status = substr($line, 0, 1);
+        $space  = substr($line, 1, 1);
+        $file   = substr($line, 2);
+
+        if((' ' !== $space && "\t" !== $space) || !array_key_exists($status, $mstatus))
+            return ['ERR', 'Unknown error'];
+
+        return [$mstatus[$status], $file];
+
+    }
+
+
 }

@@ -36,6 +36,11 @@ class PHPloy
     public $git;
 
     /**
+     * @var VCS (version control system)
+     */
+    public $vcs;
+
+    /**
      * @var array
      */
     public $hooks;
@@ -60,6 +65,9 @@ class PHPloy
     public $globalFilesToExclude = [
         '.gitignore',
         '.gitmodules',
+        '*/.gitkeep',
+        '.hgignore',
+        '.hgcheck/*',
     ];
 
     /**
@@ -131,6 +139,16 @@ class PHPloy
     public $postDeployRemote = [];
 
     /**
+     * @var array
+     */
+    public $preDeployEval = [];
+
+    /**
+     * @var array
+     */
+    public $postDeployEval = [];
+
+    /**
      * The name of the file on remote servers that stores the current revision hash.
      *
      * @var string
@@ -143,6 +161,13 @@ class PHPloy
      * @var string
      */
     public $iniFilename = 'phploy.ini';
+
+    /**
+     * Data from main ini file.
+     *
+     * @var array
+     */
+    protected $iniFileData;
 
     /**
      * The filename from which to read server password.
@@ -165,6 +190,16 @@ class PHPloy
      * @var string
      */
     protected $repo;
+
+    /**
+     * @var string
+     */
+    protected $repoType = 'WTF';
+
+    /**
+     * @var array
+     */
+    protected $repoTypes = ['git' => 'Git', 'hg' => 'Mercurial', 'svn' => 'Svn'];
 
     /**
      * @var string
@@ -235,6 +270,9 @@ class PHPloy
      */
     protected $init = false;
 
+
+    //test comment
+
     /**
      * Constructor.
      */
@@ -243,9 +281,9 @@ class PHPloy
         $this->opt = new \Banago\PHPloy\Options(new \League\CLImate\CLImate());
         $this->cli = $this->opt->cli;
 
-        $this->cli->backgroundGreen()->bold()->out('-------------------------------------------------');
-        $this->cli->backgroundGreen()->bold()->out('|                     PHPloy                    |');
-        $this->cli->backgroundGreen()->bold()->out('-------------------------------------------------');
+        $this->cli->backgroundGreen()->bold()->out('--------------------------------------------------');
+        $this->cli->backgroundGreen()->bold()->out('|              PHPloy (Dusty\'s mod)              |');
+        $this->cli->backgroundGreen()->bold()->out('--------------------------------------------------');
 
         // Setup PHPloy
         $this->setup();
@@ -268,11 +306,30 @@ class PHPloy
             return;
         }
 
-        if (file_exists("$this->repo/.git")) {
-            $this->git = new \Banago\PHPloy\Git($this->repo);
+        $iniFile = $this->repo.DIRECTORY_SEPARATOR.$this->iniFilename;
+
+        $this->iniFileData = $this->parseIniFile($iniFile);
+
+        if(!empty($this->iniFileData['repo']) && !empty($this->iniFileData['repo']['type']))
+        {
+            $this->repoType = $this->iniFileData['repo']['type'];
+
+            if(!array_key_exists($this->repoType, $this->repoTypes))
+            {
+                throw new \Exception("Invalid repo type '{$this->repoType}'" , 1);
+            }
+
+            unset($this->iniFileData['repo']);
+        }
+
+        if (file_exists($this->repo.'/.'.$this->repoType)) {
+
+            $repoClass = '\Banago\\PHPloy\\'.$this->repoTypes[$this->repoType];
+
+            $this->vcs = new $repoClass($this->repo);
             $this->deploy();
         } else {
-            throw new \Exception("'{$this->repo}' is not a Git repository.");
+            throw new \Exception("'{$this->repo}' is not a {$this->repoTypes[$this->repoType]} repository.");
         }
     }
 
@@ -317,6 +374,22 @@ class PHPloy
 
         $this->repo = getcwd();
         $this->mainRepo = $this->repo;
+    }
+
+    /**
+     * Executes a console command and returns the output (as an array).
+     *
+     * @param string $command Command to execute
+     *
+     * @return array of all lines that were output to the console during the command (STDOUT)
+     */
+    public static function exec($command)
+    {
+        $output = null;
+
+        exec('('.escapeshellcmd($command).') 2>&1', $output);
+
+        return $output;
     }
 
     /**
@@ -372,11 +445,15 @@ class PHPloy
             'post-deploy' => [],
             'pre-deploy-remote' => [],
             'post-deploy-remote' => [],
+            'pre-deploy-eval' => [],
+            'post-deploy-eval' => [],
         ];
 
-        $iniFile = $this->repo.DIRECTORY_SEPARATOR.$this->iniFilename;
 
-        $servers = $this->parseIniFile($iniFile);
+        $servers = $this->iniFileData;
+        if(isset($servers['repo']))
+            unset($servers['repo']);
+
 
         foreach ($servers as $name => $options) {
 
@@ -431,6 +508,14 @@ class PHPloy
 
             if (!empty($servers[$name]['post-deploy-remote'])) {
                 $this->postDeployRemote[$name] = $servers[$name]['post-deploy-remote'];
+            }
+
+            if (!empty($servers[$name]['pre-deploy-eval'])) {
+                $this->preDeployEval[$name] = $servers[$name]['pre-deploy-eval'];
+            }
+
+            if (!empty($servers[$name]['post-deploy-eval'])) {
+                $this->postDeployEval[$name] = $servers[$name]['post-deploy-eval'];
             }
 
             // Set host from environment variable if it does not exist in the config
@@ -544,17 +629,35 @@ class PHPloy
     {
         $filesToSkip = [];
 
-        foreach ($files as $i => $file) {
-            foreach ($this->filesToExclude[$this->currentlyDeploying] as $pattern) {
-                if ($this->patternMatch($pattern, $file)) {
+        foreach ($files as $i => $file)
+        {
+            $skipped = false;
+
+            foreach ($this->filesToExclude[$this->currentlyDeploying] as $pattern)
+            {
+                if ($this->patternMatch($pattern, $file))
+                {
+                    $this->cli->comment("IGNORED: pattern: '{$pattern}' file: '{$file}'");
                     unset($files[$i]);
                     $filesToSkip[] = $file;
+                    $skipped = true;
                     break;
                 }
+            }
+            if( !$skipped && 0 === filesize($file) )
+            {
+                $this->cli->error("WARNING: zero size file: '{$file}'");
+                unset($files[$i]);
+                $filesToSkip[] = $file;
             }
         }
 
         $files = array_values($files);
+
+
+        $a = [
+            'filesToSkip' => $filesToSkip,
+        ];
 
         return [
             'files' => $files,
@@ -593,7 +696,9 @@ class PHPloy
             $this->cli->lightYellow('LIST mode: No remote files will be modified.');
         }
 
-        $this->checkSubmodules($this->repo);
+        // hack - fix it
+        if('git' == $this->repoType)
+            $this->checkSubmodules($this->repo);
 
         $this->prepareServers();
 
@@ -641,8 +746,16 @@ class PHPloy
                 if (isset($this->preDeployRemote[$name]) && count($this->preDeployRemote[$name]) > 0) {
                     $this->preDeployRemote($this->preDeployRemote[$name]);
                 }
+
+                // Pre Deploy Eval
+                if (isset($this->preDeployEval[$name]) && count($this->preDeployEval[$name]) > 0) {
+                    $this->deployEval($this->preDeployEval[$name]);
+                }
+
+
                 // Push repository
                 $this->push($files[$this->currentlyDeploying]);
+
                 // Push Submodules
                 if ($this->scanSubmodules && count($this->submodules) > 0) {
                     foreach ($this->submodules as $submodule) {
@@ -678,6 +791,13 @@ class PHPloy
                 if (isset($this->postDeployRemote[$name]) && count($this->postDeployRemote[$name]) > 0) {
                     $this->postDeployRemote($this->postDeployRemote[$name]);
                 }
+
+                // Post Deploy Eval
+                if (isset($this->postDeployEval[$name]) && count($this->postDeployEval[$name]) > 0) {
+                    $this->deployEval($this->postDeployEval[$name]);
+                }
+
+
             }
 
             // Done
@@ -781,12 +901,12 @@ class PHPloy
             $this->cli->comment('No revision found - uploading everything...');
         }
 
-        // Checkout the specified Git branch
+        // Checkout the specified branch
         if (!empty($this->servers[$this->currentlyDeploying]['branch'])) {
-            $output = $this->git->checkout($this->servers[$this->currentlyDeploying]['branch'], $this->repo);
+            $output = $this->vcs->checkout($this->servers[$this->currentlyDeploying]['branch'], $this->repo);
 
             if (isset($output[0])) {
-                if (strpos($output[0], 'error') === 0) {
+                if (strpos($output[0], 'error') === 0 || strpos($output[0], 'abort') === 0) {
                     throw new \Exception('Stash your modifications before deploying.');
                 }
             }
@@ -802,42 +922,38 @@ class PHPloy
             }
         }
 
-        $output = $this->git->diff($remoteRevision, $localRevision, $this->repo);
+        $output = $this->vcs->diff($remoteRevision, $localRevision, $this->repo);
         $this->debug(implode("\r\n", $output));
 
-        /*
-         * Git Status Codes
-         *
-         * A: addition of a file
-         * C: copy of a file into a new one
-         * D: deletion of a file
-         * M: modification of the contents or mode of a file
-         * R: renaming of a file
-         * T: change in the type of the file
-         * U: file is unmerged (you must complete the merge before it can be committed)
-         * X: "unknown" change type (most probably a bug, please report it)
-         */
         if (!empty($remoteRevision)) {
             foreach ($output as $line) {
-                $status = $line[0];
 
-                if (strpos($line, 'warning: CRLF will be replaced by LF in') !== false) {
-                    continue;
-                } elseif (strpos($line, 'The file will have its original line endings in your working directory.') !== false) {
-                    continue;
-                } elseif ($status === 'A' or $status === 'C' or $status === 'M' or $status === 'T') {
-                    $filesToUpload[] = trim(substr($line, 1));
-                } elseif ($status == 'D') {
-                    $filesToDelete[] = trim(substr($line, 1));
-                } elseif ($status === 'R') {
-                    list(, $oldFile, $newFile) = preg_split('/\s+/', $line);
+                list($status, $file) = $this->vcs->determineStatus($line);
 
-                    $filesToDelete[] = trim($oldFile);
-                    $filesToUpload[] = trim($newFile);
-                } else {
-                    throw new \Exception("Unknown git-diff status. Use '--sync' to update remote revision or use '--debug' to see what's wrong.");
+                switch($status) {
+                    case '---':
+                        continue;
+                        break;
+                    case 'ADD':
+                    case 'MOD':
+                    case 'CPY':
+                    case 'TYP':
+                        $filesToUpload[] = $file;
+                        break;
+                    case 'DEL':
+                        $filesToDelete[] = $file;
+                        break;
+                    case 'MOV':
+                        list($oldFile, $newFile) = preg_split('/\s+/', $file);
+                        $filesToDelete[] = trim($oldFile);
+                        $filesToUpload[] = trim($newFile);
+                        break;
+
+                    default:
+                        throw new \Exception("Unknown diff status '{$status}'. Use '--sync' to update remote revision or use '--debug' to see what's wrong.");
                 }
             }
+
         } else {
             $filesToUpload = $output;
         }
@@ -873,17 +989,23 @@ class PHPloy
             $localRevision = $this->currentRevision();
         }
 
+
         $initialBranch = $this->currentBranch();
 
-        // If revision is not HEAD, the current one, it means this is a rollback.
-        // So, we have to revert the files the the state they were in that revision.
-        if ($this->revision != 'HEAD') {
-            $this->cli->out('   Rolling back working copy');
 
-            // BUG: This does NOT work correctly for submodules & subsubmodules (and leaves them in an incorrect state)
-            //      It technically should do a submodule update in the parent, not a checkout inside the submodule
-            $this->git->command('checkout '.$this->revision, $this->repo);
+        if('git' == $this->repoType)
+        {
+            // If revision is not HEAD, the current one, it means this is a rollback.
+            // So, we have to revert the files the the state they were in that revision.
+            if ($this->revision != 'HEAD') {
+                $this->cli->out('   Rolling back working copy');
+
+                // BUG: This does NOT work correctly for submodules & subsubmodules (and leaves them in an incorrect state)
+                //      It technically should do a submodule update in the parent, not a checkout inside the submodule
+                $this->vcs->command('checkout '.$this->revision, $this->repo);
+            }
         }
+
 
         $filesToDelete = $files['delete'];
         // Add deleted directories to the list of files to delete. Git does not handle this.
@@ -892,8 +1014,8 @@ class PHPloy
             $dirsToDelete = $this->hasDeletedDirectories($filesToDelete);
         }
         $filesToUpload = $files['upload'];
-
         unset($files); // No longer needed
+
 
         // Upload Files
         if (count($filesToUpload) > 0) {
@@ -924,7 +1046,6 @@ class PHPloy
                         }
                     }
                 }
-
                 $filePath = $this->repo.'/'.($this->currentSubmoduleName ? str_replace($this->currentSubmoduleName.'/', '', $file) : $file);
                 $data = @file_get_contents($filePath);
 
@@ -935,6 +1056,7 @@ class PHPloy
                 }
 
                 $remoteFile = $file;
+
                 $uploaded = $this->connection->put($remoteFile, $data);
 
                 if (!$uploaded) {
@@ -990,11 +1112,14 @@ class PHPloy
             $this->cli->gray()->out('   No files to upload or delete.');
         }
 
-        // If $this->revision is not HEAD, it means the rollback command was provided
-        // The working copy was rolled back earlier to run the deployment, and we
-        // now want to return the working copy back to its original state.
-        if ($this->revision != 'HEAD') {
-            $this->git->command('checkout '.($initialBranch ?: 'master'));
+        if('git' == $this->repoType)
+        {
+            // If $this->revision is not HEAD, it means the rollback command was provided
+            // The working copy was rolled back earlier to run the deployment, and we
+            // now want to return the working copy back to its original state.
+            if ($this->revision != 'HEAD') {
+                $this->vcs->command('checkout '.($initialBranch ?: 'master'));
+            }
         }
 
         $this->log('[SHA: '.$localRevision.'] Deployment to server: "'.$this->currentlyDeploying.'" from branch "'.
@@ -1027,7 +1152,7 @@ class PHPloy
      */
     private function currentRevision()
     {
-        return $this->git->revision;
+        return $this->vcs->revision;
     }
 
     /**
@@ -1037,7 +1162,7 @@ class PHPloy
      */
     private function currentBranch()
     {
-        $currentBranch = $this->git->branch;
+        $currentBranch = $this->vcs->branch;
         if ($currentBranch != 'HEAD') {
             return $currentBranch;
         }
@@ -1056,7 +1181,7 @@ class PHPloy
             $this->cli->out('Scanning repository...');
         }
 
-        $output = $this->git->command('submodule status', $repo);
+        $output = $this->vcs->command('submodule status', $repo);
 
         if ($this->scanSubmodules) {
             $this->cli->out('   Found '.count($output).' submodules.');
@@ -1099,7 +1224,7 @@ class PHPloy
      */
     public function checkSubSubmodules($repo, $name)
     {
-        $output = $this->git->command('submodule foreach git submodule status', $repo);
+        $output = $this->vcs->command('submodule foreach git submodule status', $repo);
 
         if (count($output) > 0) {
             foreach ($output as $line) {
@@ -1230,7 +1355,7 @@ class PHPloy
         foreach ($commands as $command) {
             $this->cli->out("Execute : <white>{$command}");
 
-            $output = $this->git->exec($command);
+            $output = $this->exec($command);
 
             $output = implode(' ', $output);
             $this->cli->out("Result : <white>{$output}");
@@ -1247,7 +1372,7 @@ class PHPloy
         foreach ($commands as $command) {
             $this->cli->out("Execute : <white>{$command}");
 
-            $output = $this->git->exec($command);
+            $output = $this->exec($command);
 
             $output = implode(' ', $output);
             $this->cli->out("Result : <white>{$output}");
@@ -1307,6 +1432,24 @@ class PHPloy
             $this->cli->out("Result remote: <white>{$output}");
         }
     }
+
+
+    /**
+     * @param array $commands
+     *
+     * N.B. eval is evil !!!
+     */
+    public function deployEval(array $commands)
+    {
+        foreach ($commands as $command)
+        {
+            $this->cli->out("Evaluating : <white>{$command}");
+            $output = eval('return '.$command);
+            $output = var_export($output, true);
+            $this->cli->out("Result: <white>{$output}");
+        }
+    }
+
 
     /**
      * Checks for deleted directories. Git cares only about files.
