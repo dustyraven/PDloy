@@ -1020,6 +1020,9 @@ class PHPloy
         // Upload Files
         if (count($filesToUpload) > 0) {
             foreach ($filesToUpload as $fileNo => $file) {
+                // Unification of file path 
+                $file = str_replace(DIRECTORY_SEPARATOR, '/', $file);
+
                 if ($this->currentSubmoduleName) {
                     $file = $this->currentSubmoduleName.'/'.$file;
                 }
