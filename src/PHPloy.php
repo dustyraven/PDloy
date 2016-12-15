@@ -625,7 +625,7 @@ class PHPloy
      *
      * @return array with `files` (filtered) and `filesToSkip`
      */
-    private function filterIgnoredFiles($files)
+    private function filterIgnoredFiles($files, $toDelete = false)
     {
         $filesToSkip = [];
 
@@ -644,7 +644,7 @@ class PHPloy
                     break;
                 }
             }
-            if( !$skipped && 0 === filesize($file) )
+            if( !$skipped && !$toDelete && 0 === filesize($file) )
             {
                 $this->cli->error("WARNING: zero size file: '{$file}'");
                 unset($files[$i]);
@@ -959,7 +959,7 @@ class PHPloy
         }
 
         $filteredFilesToUpload = $this->filterIgnoredFiles($filesToUpload);
-        $filteredFilesToDelete = $this->filterIgnoredFiles($filesToDelete);
+        $filteredFilesToDelete = $this->filterIgnoredFiles($filesToDelete, true);
         $filteredFilesToInclude = isset($this->filesToInclude[$this->currentlyDeploying]) ? $this->filterIncludedFiles($this->filesToInclude[$this->currentlyDeploying]) : [];
 
         $filesToUpload = array_merge($filteredFilesToUpload['files'], $filteredFilesToInclude);
