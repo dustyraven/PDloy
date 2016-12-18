@@ -907,12 +907,14 @@ class PHPloy
 
             if (isset($output[0])) {
                 if (strpos($output[0], 'error') === 0 || strpos($output[0], 'abort') === 0) {
+                    $this->cli->comment("Checkout: ". implode("\r\n", $output));
                     throw new \Exception('Stash your modifications before deploying.');
                 }
             }
 
             if (isset($output[1])) {
                 if ($output[1][0] === 'M') {
+                    $this->cli->comment("Checkout: ". implode("\r\n", $output));
                     throw new \Exception('Stash your modifications before deploying.');
                 }
             }
