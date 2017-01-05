@@ -903,6 +903,9 @@ class PHPloy
 
         // Checkout the specified branch
         if (!empty($this->servers[$this->currentlyDeploying]['branch'])) {
+
+            $this->cli->out('Checkout branch ' . $this->servers[$this->currentlyDeploying]['branch']);
+
             $output = $this->vcs->checkout($this->servers[$this->currentlyDeploying]['branch'], $this->repo);
 
             if (isset($output[0])) {
@@ -1022,7 +1025,7 @@ class PHPloy
         // Upload Files
         if (count($filesToUpload) > 0) {
             foreach ($filesToUpload as $fileNo => $file) {
-                // Unification of file path 
+                // Unification of file path
                 $file = str_replace(DIRECTORY_SEPARATOR, '/', $file);
 
                 if ($this->currentSubmoduleName) {

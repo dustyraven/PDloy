@@ -1,4 +1,5 @@
 /.idea
+/.vsccode
 /vendor
 /dev
 composer.lock
