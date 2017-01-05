@@ -1,5 +1,5 @@
 # PHPloy
-**Version 4.4**
+**Version 4.5**
 
 PHPloy is an incremental Git FTP and SFTP deployment tool. By keeping track of the state of the remote server(s) it deploys only the files that were committed since the last deployment. PHPloy supports submodules, sub-submodules, deploying to multiple servers and rollbacks. PHPloy requires **PHP 5.5+** and **Git 1.8+**.
 
@@ -47,6 +47,8 @@ The `phploy.ini` file holds your project configuration. It should be located in 
     branch = develop
     ; File permission set on the uploaded files/directories
     permissions = 0700
+    ; File permissions set on newly created directories
+    directoryPerm = 0775
     ; Files that should be ignored and not uploaded to your server, but still tracked in your repository
     exclude[] = 'src/*.scss'
     exclude[] = '*.ini'
@@ -74,6 +76,8 @@ The `phploy.ini` file holds your project configuration. It should be located in 
     branch = master
     ; File permission set on the uploaded files/directories
     permissions = 0774
+    ; File permissions set on newly created directories
+    directoryPerm = 0755
     ; Files that should be ignored and not uploaded to your server, but still tracked in your repository
     exclude[] = 'libs/*'
     exclude[] = 'config/*'
@@ -106,12 +110,13 @@ These variables will be used if they do not exist in the `phploy.ini` file:
 PHPLOY_HOST
 PHPLOY_PORT
 PHPLOY_PASS
+PHPLOY_PATH
 PHPLOY_USER
 ```
 
 These variables can be used like this;
 ```
-$ PHPLOY_PORT="21" PHPLOY_HOST="myftphost.com" PHPLOY_USER="ftp" PHPLOY_PASS="ftp-password" phploy -s servername
+$ PHPLOY_PORT="21" PHPLOY_HOST="myftphost.com" PHPLOY_USER="ftp" PHPLOY_PASS="ftp-password" PHPLOY_PATH="/home/user/public_html/example.com" phploy -s servername
 ```
 
 Or export them like this, the script will automatically use them:
@@ -120,6 +125,7 @@ $ export PHPLOY_PORT="21"
 $ export PHPLOY_HOST="myftphost.com"
 $ export PHPLOY_USER="ftp"
 $ export PHPLOY_PASS="ftp-password"
+$ export PHPLOY_PATH="/home/user/public_html/example.com"
 $ phploy -s servername
 ```
 
@@ -210,7 +216,8 @@ PHPloy supports simple logging of the activity. Logging is saved in a `phploy.lo
 
 To turn logging on, add this to `phploy.ini`:
 
-    logger = on
+    [production]
+        logger = on
 
 ## Contribute
 
