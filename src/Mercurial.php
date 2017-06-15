@@ -43,7 +43,7 @@ class Mercurial extends Vsc
 
     public function checkout($branch, $repoPath = null)
     {
-        $command = 'update -c '.$branch;
+        $command = 'update -c ' . '"' . $branch . '"';
 
         return $this->command($command, $repoPath);
     }
