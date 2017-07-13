@@ -1079,6 +1079,9 @@ class PHPloy
         // Delete files
         if (count($filesToDelete) > 0) {
             foreach ($filesToDelete as $fileNo => $file) {
+                // Unification of file path
+                $file = str_replace(DIRECTORY_SEPARATOR, '/', $file);
+
                 if ($this->currentSubmoduleName) {
                     $file = $this->currentSubmoduleName.'/'.$file;
                 }
@@ -1463,6 +1466,8 @@ class PHPloy
     {
         $dirsToDelete = [];
         foreach ($filesToDelete as $file) {
+            // Unification of file path
+            $file = str_replace(DIRECTORY_SEPARATOR, '/', $file);
 
             // Break directories into a list of items
             $parts = explode('/', $file);
